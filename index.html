@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>מונדיאל 2026 – חי</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+
+    <header class="top-bar">
+      <span class="trophy">🏆</span>
+      <span class="comp-title">גביע העולם FIFA 2026</span>
+      <span class="live-badge" id="live-badge">● חי</span>
+    </header>
+
+    <!-- Match list -->
+    <section id="section-matches">
+      <div class="section-label">משחקים היום</div>
+      <div id="match-list" class="match-list">
+        <div class="spinner"></div>
+      </div>
+    </section>
+
+    <!-- Match detail -->
+    <section id="section-detail" class="hidden">
+
+      <button id="back-btn" class="back-btn">&#8592; כל המשחקים</button>
+
+      <div class="scoreboard-card">
+        <div class="sb-meta" id="sb-meta"></div>
+        <div class="scoreboard">
+          <div class="sb-team">
+            <img id="home-logo" src="" alt="" class="sb-logo" />
+            <div class="sb-name" id="home-name"></div>
+          </div>
+          <div class="sb-center">
+            <div class="sb-score">
+              <span id="home-score">0</span>
+              <span class="sb-sep">-</span>
+              <span id="away-score">0</span>
+            </div>
+            <div class="sb-clock" id="sb-clock"></div>
+          </div>
+          <div class="sb-team">
+            <img id="away-logo" src="" alt="" class="sb-logo" />
+            <div class="sb-name" id="away-name"></div>
+          </div>
+        </div>
+        <div class="goals-strip" id="goals-strip"></div>
+      </div>
+
+      <div class="tabs">
+        <button class="tab active" data-panel="panel-stats">סטטיסטיקות</button>
+        <button class="tab" data-panel="panel-events">אירועים</button>
+        <button class="tab" data-panel="panel-lineup">הרכבים</button>
+      </div>
+
+      <div class="panel" id="panel-stats">
+
+        <!-- Win probability (shown only when data available) -->
+        <div class="card hidden" id="prob-card">
+          <div class="card-title">סיכוי לנצח – בזמן אמת</div>
+          <div class="prob-row">
+            <div class="prob-side home-side">
+              <span class="prob-name" id="wp-home-name"></span>
+              <span class="prob-pct" id="wp-home-pct"></span>
+            </div>
+            <div class="prob-side draw-side">
+              <span class="prob-name">תיקו</span>
+              <span class="prob-pct" id="wp-draw-pct"></span>
+            </div>
+            <div class="prob-side away-side">
+              <span class="prob-name" id="wp-away-name"></span>
+              <span class="prob-pct" id="wp-away-pct"></span>
+            </div>
+          </div>
+          <div class="prob-bar-track">
+            <div class="prob-seg home-seg" id="prob-seg-home"></div>
+            <div class="prob-seg draw-seg" id="prob-seg-draw"></div>
+            <div class="prob-seg away-seg" id="prob-seg-away"></div>
+          </div>
+        </div>
+
+        <div class="card" id="stats-card">
+          <div class="stats-header">
+            <img id="stat-home-logo" src="" class="stat-logo" onerror="this.style.display='none'" />
+            <span class="stats-center-label">סטטיסטיקה קבוצתית</span>
+            <img id="stat-away-logo" src="" class="stat-logo" onerror="this.style.display='none'" />
+          </div>
+          <div id="stats-rows"><div class="loading">טוען...</div></div>
+        </div>
+      </div>
+
+      <div class="panel hidden" id="panel-events">
+        <div class="card">
+          <div class="card-title">אירועי המשחק</div>
+          <div id="events-list"><div class="loading">טוען...</div></div>
+        </div>
+      </div>
+
+      <div class="panel hidden" id="panel-lineup">
+        <div class="card">
+          <div class="card-title">הרכבים</div>
+          <div id="lineup-content"><div class="loading">טוען...</div></div>
+        </div>
+      </div>
+
+      <div class="update-bar">
+        <span class="update-dot"></span>
+        <span id="update-text">מתעדכן...</span>
+      </div>
+
+    </section>
+  </div>
+  <script src="script.js"></script>
+</body>
+</html>
