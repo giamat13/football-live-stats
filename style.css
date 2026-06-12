@@ -115,11 +115,9 @@ section { padding: 0 12px 80px; }
 
 .mi-team:last-child { flex-direction: row-reverse; text-align: left; }
 
-.mi-logo {
-  width: 28px;
-  height: 28px;
-  object-fit: contain;
-  border-radius: 4px;
+.mi-flag {
+  font-size: 1.4rem;
+  line-height: 1;
 }
 
 .mi-score {
@@ -191,10 +189,10 @@ section { padding: 0 12px 80px; }
   gap: 8px;
 }
 
-.sb-logo {
-  width: 52px;
-  height: 52px;
-  object-fit: contain;
+.sb-flag {
+  font-size: 2.8rem;
+  line-height: 1;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,.4));
 }
 
 .sb-name {
@@ -291,10 +289,12 @@ section { padding: 0 12px 80px; }
   margin-bottom: 16px;
 }
 
-.stat-logo {
-  width: 28px;
-  height: 28px;
-  object-fit: contain;
+.stats-flag-label {
+  font-size: .78rem;
+  font-weight: 700;
+  color: var(--text);
+  max-width: 90px;
+  text-align: center;
 }
 
 .stats-center-label {
@@ -312,15 +312,41 @@ section { padding: 0 12px 80px; }
 }
 
 .stat-val {
-  min-width: 44px;
-  font-size: .95rem;
+  min-width: 36px;
+  font-size: 1rem;
   font-weight: 700;
   text-align: center;
-  border-radius: 6px;
-  padding: 3px 6px;
-  transition: background .3s;
+  padding: 4px 10px;
+  border-radius: 20px;
+  transition: background .25s, color .25s;
+  color: var(--muted);
 }
 
+/* Home (left) team badge — blue */
+.stat-val.highlighted-home {
+  background: #3b6fd4;
+  color: #fff;
+}
+
+/* Away (right) team badge — red/orange */
+.stat-val.highlighted-away {
+  background: #d44a3b;
+  color: #fff;
+}
+
+/* Yellow card keeps its color */
+.stat-val.highlighted-yellow {
+  background: var(--yellow);
+  color: #1a1200;
+}
+
+/* Red card */
+.stat-val.highlighted-red {
+  background: var(--red);
+  color: #fff;
+}
+
+/* fallback */
 .stat-val.highlighted {
   background: var(--blue);
   color: #fff;
@@ -553,14 +579,18 @@ section { padding: 0 12px 80px; }
 
 /* ── Goals strip ──────────────────────────────────────────────────────────── */
 .goal-item {
-  font-size: .8rem;
-  padding: 3px 0;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .82rem;
+  padding: 4px 0;
+  justify-content: center;
 }
 
-.goal-home { color: #7db8f7; }
-.goal-away { color: #f78080; }
-.goal-team { color: var(--muted); }
+.goal-flag { font-size: 1rem; }
+.goal-min  { font-weight: 700; color: var(--gold); }
+.goal-scorer { font-weight: 600; }
+.goal-assist { color: var(--muted); font-size: .75rem; }
 
 /* ── Match item bottom ────────────────────────────────────────────────────── */
 .mi-bottom {
@@ -594,6 +624,95 @@ section { padding: 0 12px 80px; }
   font-size: .82rem;
   color: var(--text);
   margin-top: 2px;
+}
+
+/* ── Win probability chart ───────────────────────────────────────────────── */
+.wp-chart-wrap {
+  margin-top: 10px;
+  direction: ltr;
+}
+
+.win-prob-chart {
+  width: 100%;
+  height: 78px;
+  display: block;
+  overflow: visible;
+}
+
+.spark-draw-line { stroke: #7a7fa8; }
+
+.goal-line {
+  stroke: rgba(255,215,0,.35);
+  stroke-width: 1;
+  stroke-dasharray: 3 2;
+}
+
+/* ── Stat block (row + bars + sparkline) ─────────────────────────────────── */
+.stat-block {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+  cursor: pointer;
+  transition: background .15s;
+  border-radius: 6px;
+}
+
+.stat-block:last-child { border-bottom: none; }
+.stat-block:hover { background: rgba(255,255,255,.03); }
+.stat-block.expanded { background: rgba(91,127,232,.06); border-color: rgba(91,127,232,.25); }
+
+.chart-toggle {
+  font-size: .65rem;
+  margin-right: 4px;
+  opacity: .5;
+  vertical-align: middle;
+}
+
+.stat-block.expanded .chart-toggle { opacity: 1; }
+
+/* ── Sparkline ───────────────────────────────────────────────────────────── */
+.spark-wrap {
+  padding: 2px 4px 4px;
+  direction: ltr; /* SVG coords are LTR */
+}
+
+.sparkline {
+  width: 100%;
+  height: 32px;
+  display: block;
+  overflow: visible;
+}
+
+.spark-expanded {
+  height: 72px;
+}
+
+.spark-line {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.spark-home-line { stroke: #5b7fe8; }
+.spark-away-line { stroke: #e85b5b; }
+
+.spark-dot-home { fill: #5b7fe8; }
+.spark-dot-away { fill: #e85b5b; }
+
+.spark-label {
+  font-size: 8px;
+  fill: var(--muted, #8b8fa8);
+  text-anchor: middle;
+  font-family: sans-serif;
+}
+
+.spark-empty {
+  text-align: center;
+  font-size: .72rem;
+  color: var(--muted);
+  padding: 8px 0;
 }
 
 /* ── Scrollbar ────────────────────────────────────────────────────────────── */
