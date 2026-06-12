@@ -3,32 +3,35 @@ const LEAGUE     = 'fifa.world';
 const REFRESH_MS = 1_000;
 
 const STAT_LABELS = {
-  shotsOnTarget:   'ביצועות למסגרת',
-  totalShots:      'ביצועות',
-  possessionPct:   'החזקת כדור',
-  foulsCommitted:  'עבירות',
-  yellowCards:     'כרטיסים צהובים',
-  redCards:        'כרטיסים אדומים',
-  offsides:        'נבדלים',
-  wonCorners:      'קרנות',
-  saves:           'הצלות שוער',
-  blockedShots:    'חסימות',
-  totalPass:       'מסירות',
-  accuratePass:    'מסירות מדויקות',
-  bigChances:      'הזדמנויות גדולות',
-  bigChanceMissed: 'הזדמנויות שהוחמצו',
-  tackles:         'תפיסות',
-  interceptions:   'יירוטים',
-  dribbles:        'דריבלים',
+  shotsOnTarget:    'ביצועות למסגרת',
+  totalShots:       'ביצועות',
+  possessionPct:    'החזקת כדור',
+  totalPasses:      'סה"כ מסירות',
+  accuratePasses:   'מסירות מדויקות',
+  foulsCommitted:   'עבירות',
+  yellowCards:      'כרטיסים צהובים',
+  redCards:         'כרטיסים אדומים',
+  offsides:         'נבדלים',
+  wonCorners:       'קרנות',
+  saves:            'הצלות שוער',
+  blockedShots:     'חסימות',
+  totalTackles:     'נסיונות תפיסה',
+  effectiveTackles: 'תפיסות מוצלחות',
+  interceptions:    'יירוטים',
+  totalCrosses:     'מסירות רוחב',
+  accurateCrosses:  'מסירות רוחב מדויקות',
+  totalLongBalls:   'כדורים ארוכים',
+  effectiveClearance: 'פינויים',
 };
 
 const ORDERED_KEYS = [
   'shotsOnTarget', 'totalShots', 'possessionPct',
-  'totalPass', 'accuratePass',
+  'totalPasses', 'accuratePasses',
   'foulsCommitted', 'yellowCards', 'redCards',
   'offsides', 'wonCorners', 'saves',
-  'blockedShots', 'tackles', 'interceptions',
-  'bigChances', 'bigChanceMissed', 'dribbles',
+  'blockedShots', 'effectiveTackles', 'totalTackles',
+  'interceptions', 'totalCrosses', 'accurateCrosses',
+  'totalLongBalls', 'effectiveClearance',
 ];
 
 const EVENT_TYPES = [
@@ -451,14 +454,24 @@ function renderStats(boxscore, home, away, comp) {
     let hSub  = '';
     let aSub  = '';
 
-    // accuratePass shown as separate row with % format only
-    if (stat.name === 'accuratePass') {
-      const hTotal = parseStatNum('totalPass',
-        (homeStats.statistics || []).find(s => s.name === 'totalPass')?.displayValue ?? '0');
-      const aTotal = parseStatNum('totalPass',
-        awayMap['totalPass']?.displayValue ?? '0');
-      hDisp = hTotal > 0 ? `${Math.round((hNum / hTotal) * 100)}%` : '0%';
-      aDisp = aTotal > 0 ? `${Math.round((aNum / aTotal) * 100)}%` : '0%';
+    // accuratePasses: show as % of totalPasses
+    if (stat.name === 'accuratePasses') {
+      const hTotalStat = (homeStats.statistics || []).find(s => s.name === 'totalPasses');
+      const aTotalStat = awayMap['totalPasses'];
+      const hTotal = parseStatNum('totalPasses', hTotalStat?.displayValue ?? '0');
+      const aTotal = parseStatNum('totalPasses', aTotalStat?.displayValue ?? '0');
+      hDisp = hTotal > 0 ? `${Math.round((hNum / hTotal) * 100)}%` : `${hNum}`;
+      aDisp = aTotal > 0 ? `${Math.round((aNum / aTotal) * 100)}%` : `${aNum}`;
+    }
+
+    // accurateCrosses: show as % of totalCrosses
+    if (stat.name === 'accurateCrosses') {
+      const hTotalStat = (homeStats.statistics || []).find(s => s.name === 'totalCrosses');
+      const aTotalStat = awayMap['totalCrosses'];
+      const hTotal = parseStatNum('totalCrosses', hTotalStat?.displayValue ?? '0');
+      const aTotal = parseStatNum('totalCrosses', aTotalStat?.displayValue ?? '0');
+      hDisp = hTotal > 0 ? `${Math.round((hNum / hTotal) * 100)}%` : `${hNum}`;
+      aDisp = aTotal > 0 ? `${Math.round((aNum / aTotal) * 100)}%` : `${aNum}`;
     }
 
     rows.push({ key: stat.name, label: STAT_LABELS[stat.name], hDisp, aDisp, hSub, aSub, hNum, aNum, hW, aW, isCard });
