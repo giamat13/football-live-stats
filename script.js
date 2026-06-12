@@ -633,41 +633,82 @@ function renderWinProbChart(timeline) {
 // ── Win Probability ───────────────────────────────────────────────────────────
 
 function poissonPMF(k, lam) {
-  if (lam === 0) return k === 0 ? 1 : 0;
+  if (lam <= 0) return k === 0 ? 1 : 0;
   let p = Math.exp(-lam);
   for (let i = 1; i <= k; i++) p *= lam / i;
   return p;
 }
 
-function calcLiveWinProb(homeML, awayML, drawML, homeScore, awayScore, minute) {
-  const toImplied = ml => ml > 0 ? 100 / (ml + 100) : Math.abs(ml) / (Math.abs(ml) + 100);
+const toImplied = ml =>
+  ml > 0 ? 100 / (ml + 100) : Math.abs(ml) / (Math.abs(ml) + 100);
+
+// Vig-free 1X2 probabilities from moneyline odds
+function marketProbs(homeML, awayML, drawML) {
   const rawH = toImplied(homeML);
   const rawA = toImplied(awayML);
   const rawD = drawML != null ? toImplied(drawML) : 0.27;
   const tot  = rawH + rawA + rawD;
-  const pH   = rawH / tot;
-  const pA   = rawA / tot;
+  return { pH: rawH / tot, pD: rawD / tot, pA: rawA / tot };
+}
 
-  const ratio  = Math.sqrt(pH / pA);
-  const xgHome = 2.7 * ratio / (ratio + 1 / ratio);
-  const xgAway = 2.7 - xgHome;
-
-  const rem  = Math.max(0, 90 - minute);
-  const lamH = xgHome * rem / 90;
-  const lamA = xgAway * rem / 90;
-
-  const MAX = 10;
-  const diff = homeScore - awayScore;
+// Full-time 1X2 probabilities for a pair of Poisson scoring rates.
+// `diff` lets the current scoreline carry through to the final result.
+function poisson1X2(lamH, lamA, diff = 0, MAX = 12) {
   let wH = 0, wD = 0, wA = 0;
   for (let i = 0; i <= MAX; i++) {
+    const pi = poissonPMF(i, lamH);
     for (let j = 0; j <= MAX; j++) {
-      const p = poissonPMF(i, lamH) * poissonPMF(j, lamA);
+      const p = pi * poissonPMF(j, lamA);
       const d = diff + i - j;
       if (d > 0) wH += p; else if (d === 0) wD += p; else wA += p;
     }
   }
   const t = wH + wD + wA;
   return { home: wH / t, draw: wD / t, away: wA / t };
+}
+
+// Solve for the home/away expected goals (over a full match) whose Poisson
+// model reproduces the market's 1X2 probabilities. Parametrised by total goals
+// (L) and supremacy (S = home − away): L drives the draw rate, S the balance.
+// Cached per odds line since it only depends on the market, not the live score.
+const _lambdaCache = new Map();
+function calibrateLambdas(pH, pD, pA) {
+  const key = `${pH.toFixed(3)}|${pD.toFixed(3)}`;
+  const cached = _lambdaCache.get(key);
+  if (cached) return cached;
+
+  let L = 2.6, S = 0;
+  for (let iter = 0; iter < 80; iter++) {
+    const lamH = Math.max(0.04, (L + S) / 2);
+    const lamA = Math.max(0.04, (L - S) / 2);
+    const pr   = poisson1X2(lamH, lamA);
+    // Nudge supremacy toward the win/loss imbalance, total toward the draw rate.
+    S += ((pH - pA) - (pr.home - pr.away)) * 1.5;
+    L += (pr.draw - pD) * 2.5;
+    L = Math.min(6, Math.max(0.3, L));
+    S = Math.min(5, Math.max(-5, S));
+  }
+  const res = { lamH: Math.max(0.04, (L + S) / 2), lamA: Math.max(0.04, (L - S) / 2) };
+  _lambdaCache.set(key, res);
+  return res;
+}
+
+function calcLiveWinProb(homeML, awayML, drawML, homeScore, awayScore, minute) {
+  const { pH, pD, pA } = marketProbs(homeML, awayML, drawML);
+  const { lamH, lamA } = calibrateLambdas(pH, pD, pA);
+
+  // Scale the calibrated full-match rates down to the minutes that remain.
+  const frac = Math.max(0, 90 - minute) / 90;
+  const diff = homeScore - awayScore;
+  // No time left → only the current scoreline matters.
+  const MAX  = frac > 0 ? 10 : 0;
+  return poisson1X2(lamH * frac, lamA * frac, diff, MAX);
+}
+
+// Percentage with up to 2 decimals, trailing zeros trimmed
+// (e.g. 45 → "45%", 45.3 → "45.3%", 45.328 → "45.33%").
+function fmtPct(v) {
+  return `${parseFloat(v.toFixed(2))}%`;
 }
 
 function renderWinProb(pickcenter, home, away, comp, keyEvents) {
@@ -695,35 +736,30 @@ function renderWinProb(pickcenter, home, away, comp, keyEvents) {
     else if (homeScore < awayScore) prob = { home: 0, draw: 0, away: 1 };
     else                            prob = { home: 0, draw: 1, away: 0 };
   } else if (state === 'pre') {
-    const rH = toImpliedSimple(hML), rA = toImpliedSimple(aML), rD = drawML ? toImpliedSimple(drawML) : 0.27;
-    const t  = rH + rA + rD;
-    prob = { home: rH/t, draw: rD/t, away: rA/t };
+    const m = marketProbs(hML, aML, drawML);
+    prob = { home: m.pH, draw: m.pD, away: m.pA };
   } else {
     prob = calcLiveWinProb(hML, aML, drawML, homeScore, awayScore, minute);
   }
 
-  const hPct = Math.round(prob.home * 100);
-  const dPct = Math.round(prob.draw * 100);
-  const aPct = 100 - hPct - dPct;
+  const hPct = prob.home * 100;
+  const dPct = prob.draw * 100;
+  const aPct = prob.away * 100;
 
   $('wp-home-name').textContent  = translateTeam(home?.team?.displayName || '');
   $('wp-away-name').textContent  = translateTeam(away?.team?.displayName || '');
-  $('wp-home-pct').textContent   = `${hPct}%`;
-  $('wp-draw-pct').textContent   = `${dPct}%`;
-  $('wp-away-pct').textContent   = `${aPct}%`;
-  $('prob-seg-home').style.width = `${hPct}%`;
-  $('prob-seg-draw').style.width = `${dPct}%`;
-  $('prob-seg-away').style.width = `${aPct}%`;
+  $('wp-home-pct').textContent   = fmtPct(hPct);
+  $('wp-draw-pct').textContent   = fmtPct(dPct);
+  $('wp-away-pct').textContent   = fmtPct(aPct);
+  $('prob-seg-home').style.width = `${hPct.toFixed(2)}%`;
+  $('prob-seg-draw').style.width = `${dPct.toFixed(2)}%`;
+  $('prob-seg-away').style.width = `${aPct.toFixed(2)}%`;
   probCard.classList.remove('hidden');
 
   // Win probability chart (full match history reconstructed from goals)
   const timeline = buildWinProbTimeline(keyEvents || [], pickcenter, home, away, minute);
   const chartEl  = $('wp-chart');
   if (chartEl) chartEl.innerHTML = renderWinProbChart(timeline);
-}
-
-function toImpliedSimple(ml) {
-  return ml > 0 ? 100 / (ml + 100) : Math.abs(ml) / (Math.abs(ml) + 100);
 }
 
 // ── Events list ───────────────────────────────────────────────────────────────
