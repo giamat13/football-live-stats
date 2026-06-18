@@ -719,3 +719,95 @@ section { padding: 0 12px 80px; }
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ── Sportsmanship card ───────────────────────────────────────────────────── */
+.sport-meters {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.sport-meter-wrap {
+  flex: 1;
+}
+
+.sport-label {
+  font-size: .72rem;
+  color: var(--muted);
+  margin-bottom: 2px;
+  font-weight: 600;
+}
+
+.sport-score {
+  font-size: 1.6rem;
+  font-weight: 800;
+  line-height: 1.1;
+  margin-bottom: 4px;
+}
+
+.sport-track {
+  height: 8px;
+  background: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.sport-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width .6s ease;
+}
+
+.sport-vs {
+  font-size: 1.4rem;
+  flex-shrink: 0;
+}
+
+.sport-breakdown {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  margin-bottom: 10px;
+}
+
+.sport-breakdown-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: .78rem;
+  padding: 3px 0;
+  gap: 6px;
+}
+
+.sport-bd-label {
+  flex: 1;
+  text-align: center;
+  color: var(--muted);
+}
+
+.sport-pen {
+  font-size: .68rem;
+  color: #666;
+}
+
+.sport-bd-val {
+  width: 30px;
+  text-align: center;
+  font-weight: 700;
+  font-size: .85rem;
+}
+
+.sport-better { color: #2ecc71; }
+.sport-worse  { color: #e74c3c; }
+
+.sport-chart-wrap {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.sport-chart-title {
+  font-size: .72rem;
+  color: var(--muted);
+  margin-bottom: 6px;
+  font-weight: 600;
+}

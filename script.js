@@ -292,6 +292,7 @@ function renderMatchList(events) {
 async function openMatch(id) {
   currentFixtureId = id;
   Object.keys(statHistory).forEach(k => delete statHistory[k]);
+  sportHistory.length = 0;
   expandedStat = null;
   loadStatHistoryFromStorage(); // restore previous session data
   $('section-matches').classList.add('hidden');
@@ -339,6 +340,8 @@ function renderDetail(data) {
 
   const keyEvents = data.keyEvents || [];
   renderKeyEvents(keyEvents, home, away);
+  const minute = parseInt(comp?.status?.displayClock?.split(':')?.[0] ?? 0);
+  renderSportsmanship(data.boxscore, home, away, minute);
   renderStats(data.boxscore, home, away, comp);
   renderEventsList(keyEvents, home, away);
   renderLineup(data.rosters || [], home, away);
@@ -411,6 +414,124 @@ function renderKeyEvents(keyEvents, home, away) {
       ${assist ? `<span class="goal-assist">(בסיוע ${assist})</span>` : ''}
     </div>`;
   }).join('');
+}
+
+// ── Sportsmanship ─────────────────────────────────────────────────────────────
+
+// { fixtureId → [{minute, home, away}] }
+const sportHistory = [];
+
+function calcSportsScore(stats) {
+  const get = name => {
+    const s = stats.find(x => x.name === name);
+    return parseStatNum(name, s?.displayValue ?? '0');
+  };
+  const fouls   = get('foulsCommitted');
+  const yellows = get('yellowCards');
+  const reds    = get('redCards');
+  const offs    = get('offsides');
+  const score = Math.max(0, 100 - fouls * 2.5 - yellows * 8 - reds * 20 - offs * 1.5);
+  return Math.round(score * 10) / 10;
+}
+
+function sportScoreColor(score) {
+  if (score >= 75) return '#2ecc71';
+  if (score >= 50) return '#f5c518';
+  if (score >= 30) return '#e67e22';
+  return '#e74c3c';
+}
+
+function renderSportsmanship(boxscore, home, away, minute) {
+  const container = $('sport-content');
+  if (!boxscore?.teams?.length) {
+    container.innerHTML = '<div class="loading">הנתונים יופיעו עם תחילת המשחק</div>';
+    return;
+  }
+
+  const homeStats = (boxscore.teams.find(t => t.homeAway === 'home') || boxscore.teams[0]).statistics || [];
+  const awayStats = (boxscore.teams.find(t => t.homeAway === 'away') || boxscore.teams[1]).statistics || [];
+
+  const hScore = calcSportsScore(homeStats);
+  const aScore = calcSportsScore(awayStats);
+
+  // Accumulate history
+  const last = sportHistory[sportHistory.length - 1];
+  if (!last || last.minute !== minute || last.home !== hScore || last.away !== aScore) {
+    sportHistory.push({ minute, home: hScore, away: aScore });
+    if (sportHistory.length > 95) sportHistory.shift();
+  }
+
+  const hColor = sportScoreColor(hScore);
+  const aColor = sportScoreColor(aScore);
+  const hName  = translateTeam(home?.team?.displayName || '');
+  const aName  = translateTeam(away?.team?.displayName || '');
+
+  const meter = (score, color, label, align) => `
+    <div class="sport-meter-wrap" style="text-align:${align}">
+      <div class="sport-label">${label}</div>
+      <div class="sport-score" style="color:${color}">${score}</div>
+      <div class="sport-track">
+        <div class="sport-fill" style="width:${score}%;background:${color}"></div>
+      </div>
+    </div>`;
+
+  // Breakdown rows
+  const getVal = (stats, name) => {
+    const s = stats.find(x => x.name === name);
+    return parseStatNum(name, s?.displayValue ?? '0');
+  };
+
+  const breakdowns = [
+    { key: 'foulsCommitted', label: 'עבירות', penalty: 2.5 },
+    { key: 'yellowCards',    label: 'כרטיסים צהובים', penalty: 8 },
+    { key: 'redCards',       label: 'כרטיסים אדומים', penalty: 20 },
+    { key: 'offsides',       label: 'נבדלים', penalty: 1.5 },
+  ];
+
+  const breakdownHtml = breakdowns.map(({ key, label, penalty }) => {
+    const hV = getVal(homeStats, key);
+    const aV = getVal(awayStats, key);
+    const hBetter = hV <= aV;
+    const aBetter = aV <= hV;
+    return `
+      <div class="sport-breakdown-row">
+        <span class="sport-bd-val ${hBetter ? 'sport-better' : 'sport-worse'}">${hV}</span>
+        <span class="sport-bd-label">${label} <span class="sport-pen">(-${penalty} לכל)</span></span>
+        <span class="sport-bd-val ${aBetter ? 'sport-better' : 'sport-worse'}">${aV}</span>
+      </div>`;
+  }).join('');
+
+  // Chart from history
+  const chartHtml = (() => {
+    const hist = sportHistory;
+    if (hist.length < 2) return '';
+    const W = 260, H = 52;
+    const maxMin = Math.max(...hist.map(p => p.minute), 90);
+    const toX = m => ((m / maxMin) * W).toFixed(1);
+    const toY = v => (H - (v / 100) * H * 0.92).toFixed(1);
+    const homePts = hist.map(p => `${toX(p.minute)},${toY(p.home)}`).join(' ');
+    const awayPts = hist.map(p => `${toX(p.minute)},${toY(p.away)}`).join(' ');
+    const xLabels = [0,15,30,45,60,75,90].filter(m => m <= maxMin)
+      .map(m => `<text x="${toX(m)}" y="${H+11}" class="spark-label">${m}'</text>`).join('');
+    return `
+      <div class="sport-chart-title">היסטוריית ספורטביות</div>
+      <svg class="sparkline spark-expanded" viewBox="0 0 ${W} ${H+14}" preserveAspectRatio="none">
+        <polyline points="${homePts}" class="spark-line spark-home-line"/>
+        <polyline points="${awayPts}" class="spark-line spark-away-line"/>
+        ${xLabels}
+      </svg>`;
+  })();
+
+  container.innerHTML = `
+    <div class="sport-meters">
+      ${meter(hScore, hColor, hName, 'right')}
+      <div class="sport-vs">⚖️</div>
+      ${meter(aScore, aColor, aName, 'left')}
+    </div>
+    <div class="sport-breakdown">
+      ${breakdownHtml}
+    </div>
+    ${chartHtml ? `<div class="sport-chart-wrap">${chartHtml}</div>` : ''}`;
 }
 
 // ── Statistics + Sparklines ───────────────────────────────────────────────────
