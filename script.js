@@ -54,6 +54,7 @@ const EVENT_TYPES = [
 // ── State ─────────────────────────────────────────────────────────────────────
 
 let currentFixtureId = null;
+const finalCelebrated = {}; // fixtureId -> true once we've shown the victory celebration
 let refreshTimer     = null;
 let expandedStat     = null;
 
@@ -117,6 +118,50 @@ function formatClock(comp) {
 
 function translateTeam(name) { return TEAM_HE[name] || name; }
 function teamFlag(name)       { return TEAM_FLAG[name] || '🏳'; }
+
+// ── Final-match victory celebration ─────────────────────────────────────────
+const CONFETTI_COLORS = ['#f5c518', '#5b7fe8', '#e85b5b', '#ffffff', '#7ee787'];
+
+function launchConfetti() {
+  const layer = $('confetti-layer');
+  if (!layer) return;
+  const count = 90;
+  for (let i = 0; i < count; i++) {
+    const piece = document.createElement('div');
+    piece.className = 'confetti-piece';
+    const color    = CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)];
+    const left     = Math.random() * 100;
+    const duration = 2.6 + Math.random() * 2.2;
+    const delay    = Math.random() * 0.6;
+    const drift    = (Math.random() * 160 - 80).toFixed(0);
+    const spin     = (720 + Math.random() * 720).toFixed(0);
+    const isCircle = Math.random() > 0.5;
+    piece.style.left            = `${left}%`;
+    piece.style.background      = color;
+    piece.style.borderRadius    = isCircle ? '50%' : '2px';
+    piece.style.animationDuration = `${duration}s`;
+    piece.style.animationDelay    = `${delay}s`;
+    piece.style.setProperty('--drift', `${drift}px`);
+    piece.style.setProperty('--spin', `${spin}deg`);
+    layer.appendChild(piece);
+    setTimeout(() => piece.remove(), (duration + delay) * 1000 + 200);
+  }
+}
+
+function showWinnerBanner(text) {
+  const banner = $('winner-banner');
+  const label  = $('winner-text');
+  if (!banner || !label) return;
+  label.textContent = text;
+  banner.classList.remove('hidden');
+  // Force reflow so the 'show' class re-triggers the pop animation reliably.
+  void banner.offsetWidth;
+  banner.classList.add('show');
+  setTimeout(() => {
+    banner.classList.remove('show');
+    setTimeout(() => banner.classList.add('hidden'), 400);
+  }, 6000);
+}
 
 // ── Tournament stage (group / knockout round) ──────────────────────────────
 // ESPN exposes the stage as free text inside altGameNote, e.g.
@@ -375,6 +420,18 @@ function renderDetail(data) {
     (data.gameInfo?.venue?.fullName ? ` · ${data.gameInfo.venue.fullName}` : '');
 
   document.body.classList.toggle('is-final', rawStage(comp).toLowerCase() === 'final');
+
+  if (rawStage(comp).toLowerCase() === 'final' &&
+      comp.status?.type?.state === 'post' &&
+      !finalCelebrated[currentFixtureId]) {
+    finalCelebrated[currentFixtureId] = true;
+    const homeScore = parseInt(home?.score ?? 0);
+    const awayScore = parseInt(away?.score ?? 0);
+    const homeWon = home?.winner || (!away?.winner && homeScore > awayScore);
+    const winnerName = translateTeam(homeWon ? hName : aName);
+    launchConfetti();
+    showWinnerBanner(`🏆 ${winnerName} — אלופת העולם 2026!`);
+  }
 
   $('live-badge').classList.toggle('hidden', comp.status?.type?.state !== 'in');
   $('stat-home-name').textContent = translateTeam(hName);
