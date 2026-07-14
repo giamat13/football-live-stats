@@ -164,6 +164,68 @@ section { padding: 0 12px 80px; }
   border-radius: var(--radius);
   padding: 20px 16px 14px;
   margin-bottom: 10px;
+  position: relative;
+}
+
+/* No draw outcome exists in knockout matches — hide the draw column entirely */
+#prob-card.no-draw .draw-side,
+#prob-card.no-draw .draw-seg {
+  display: none;
+}
+
+/* ── Final match: gold shimmer + glow treatment ──────────────────────────── */
+body.is-final .scoreboard-card {
+  border-color: rgba(245, 197, 24, .55);
+  overflow: hidden;
+  animation: final-glow 2.4s ease-in-out infinite;
+}
+
+@keyframes final-glow {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(245,197,24,.25), 0 0 16px rgba(245,197,24,.15); }
+  50%      { box-shadow: 0 0 0 1px rgba(245,197,24,.55), 0 0 34px rgba(245,197,24,.4);  }
+}
+
+body.is-final .scoreboard-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg,
+    transparent 20%,
+    rgba(245,197,24,.16) 42%,
+    rgba(255,255,255,.35) 50%,
+    rgba(245,197,24,.16) 58%,
+    transparent 80%);
+  background-size: 260% 260%;
+  animation: final-shimmer 3.4s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes final-shimmer {
+  0%   { background-position: 160% -60%; }
+  100% { background-position: -60% 160%; }
+}
+
+body.is-final .sb-meta {
+  color: var(--gold);
+  font-weight: 800;
+  animation: final-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes final-pulse {
+  0%, 100% { opacity: .8;  text-shadow: 0 0 6px rgba(245,197,24,.3); }
+  50%      { opacity: 1;   text-shadow: 0 0 14px rgba(245,197,24,.75); }
+}
+
+body.is-final .trophy {
+  display: inline-block;
+  animation: final-trophy-bounce 1.8s ease-in-out infinite;
+}
+
+@keyframes final-trophy-bounce {
+  0%, 100% { transform: translateY(0) rotate(0deg);   filter: drop-shadow(0 0 2px rgba(245,197,24,0)); }
+  25%      { transform: translateY(-3px) rotate(-6deg); }
+  50%      { transform: translateY(0) rotate(0deg);   filter: drop-shadow(0 0 8px rgba(245,197,24,.9)); }
+  75%      { transform: translateY(-3px) rotate(6deg); }
 }
 
 .sb-meta {
@@ -603,6 +665,13 @@ section { padding: 0 12px 80px; }
 }
 
 .mi-group { color: var(--gold); font-size: .7rem; }
+.mi-group.mi-knockout {
+  color: #fff;
+  background: var(--gold);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 700;
+}
 
 /* ── Event neutral ────────────────────────────────────────────────────────── */
 .event-neutral .ev-player,

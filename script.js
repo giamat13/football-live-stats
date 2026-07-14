@@ -118,6 +118,45 @@ function formatClock(comp) {
 function translateTeam(name) { return TEAM_HE[name] || name; }
 function teamFlag(name)       { return TEAM_FLAG[name] || '🏳'; }
 
+// ── Tournament stage (group / knockout round) ──────────────────────────────
+// ESPN exposes the stage as free text inside altGameNote, e.g.
+// "FIFA World Cup, Group A"  |  "FIFA World Cup, Round of 16"
+// "FIFA World Cup, Quarterfinal"  |  "FIFA World Cup, Semifinal"
+// "FIFA World Cup, Final"  |  "FIFA World Cup, Third Place"
+const STAGE_HE = {
+  'round of 32':   'שלב ה-32',
+  'round of 16':   'שמינית גמר',
+  'quarterfinal':  'רבע גמר',
+  'quarter-final': 'רבע גמר',
+  'semifinal':     'חצי גמר',
+  'semi-final':    'חצי גמר',
+  'third place':   'משחק על מקום שלישי',
+  '3rd place':     'משחק על מקום שלישי',
+  'final':         'גמר',
+};
+
+function rawStage(comp) {
+  const note = comp?.altGameNote || comp?.notes?.[0]?.headline || '';
+  const part = note.split(',').pop()?.trim() || '';
+  return part;
+}
+
+function translateStage(comp) {
+  const raw = rawStage(comp);
+  if (!raw) return '';
+  const lower = raw.toLowerCase();
+  if (lower.startsWith('group')) {
+    const letter = raw.trim().split(' ').pop();
+    return `בית ${letter}`;
+  }
+  return STAGE_HE[lower] || raw;
+}
+
+function isKnockoutStage(comp) {
+  const lower = rawStage(comp).toLowerCase();
+  return lower.length > 0 && !lower.startsWith('group');
+}
+
 function formatStatValue(name, raw) {
   if (name === 'possessionPct') return `${Math.round(parseFloat(raw) || 0)}%`;
   return String(raw);
@@ -277,7 +316,7 @@ function renderMatchList(events) {
         </div>
         <div class="mi-bottom">
           <span class="mi-clock ${isLive ? 'live-clock' : ''}">${isLive ? '● ' : ''}${clock}</span>
-          <span class="mi-group">${comp.groups?.shortName || ''}</span>
+          <span class="mi-group ${isKnockoutStage(comp) ? 'mi-knockout' : ''}">${translateStage(comp)}</span>
         </div>
       </div>`;
   }).join('');
@@ -330,9 +369,12 @@ function renderDetail(data) {
   $('home-score').textContent = home?.score ?? 0;
   $('away-score').textContent = away?.score ?? 0;
   $('sb-clock').textContent   = formatClock(comp);
+  const stageText = translateStage(comp);
   $('sb-meta').textContent    =
-    (data.header?.season?.name || '') +
+    (stageText || data.header?.season?.name || '') +
     (data.gameInfo?.venue?.fullName ? ` · ${data.gameInfo.venue.fullName}` : '');
+
+  document.body.classList.toggle('is-final', rawStage(comp).toLowerCase() === 'final');
 
   $('live-badge').classList.toggle('hidden', comp.status?.type?.state !== 'in');
   $('stat-home-name').textContent = translateTeam(hName);
@@ -672,7 +714,7 @@ function renderStats(boxscore, home, away, comp) {
 
 // ── Win Probability Timeline (reconstructed from goals) ──────────────────────
 
-function buildWinProbTimeline(keyEvents, pickcenter, homeComp, awayComp, currentMinute) {
+function buildWinProbTimeline(keyEvents, pickcenter, homeComp, awayComp, currentMinute, knockout = false) {
   const pc = Array.isArray(pickcenter) ? pickcenter[0] : pickcenter;
   const pickHomeId     = pc?.homeTeamOdds?.team?.id;
   const isHomePickHome = String(pickHomeId) === String(homeComp?.team?.id);
@@ -700,13 +742,14 @@ function buildWinProbTimeline(keyEvents, pickcenter, homeComp, awayComp, current
       if (goals[gi].forHome) hScore++; else aScore++;
       gi++;
     }
-    const prob = calcLiveWinProb(hML, aML, dML, hScore, aScore, m);
+    let prob = calcLiveWinProb(hML, aML, dML, hScore, aScore, m);
+    if (knockout) prob = stripDraw(prob);
     timeline.push({ minute: m, home: prob.home, draw: prob.draw, away: prob.away });
   }
   return timeline;
 }
 
-function renderWinProbChart(timeline) {
+function renderWinProbChart(timeline, knockout = false) {
   if (timeline.length < 2) return '';
   const W = 260, H = 64;
   const maxMin = timeline[timeline.length - 1].minute;
@@ -730,9 +773,13 @@ function renderWinProbChart(timeline) {
     .map(m => `<text x="${toX(Math.min(m, maxMin))}" y="${H + 12}" class="spark-label">${m}'</text>`)
     .join('');
 
-  // Legend
+  // Legend (no draw entry for knockout matches — there's no such outcome)
   const lx = W - 80;
-  const legend = `
+  const legend = knockout ? `
+    <rect x="${lx}" y="2" width="8" height="3" fill="#5b7fe8" rx="1"/>
+    <text x="${lx + 11}" y="6" class="spark-label" text-anchor="start">בית</text>
+    <rect x="${lx}" y="10" width="8" height="3" fill="#e85b5b" rx="1"/>
+    <text x="${lx + 11}" y="14" class="spark-label" text-anchor="start">חוץ</text>` : `
     <rect x="${lx}" y="2" width="8" height="3" fill="#5b7fe8" rx="1"/>
     <text x="${lx + 11}" y="6" class="spark-label" text-anchor="start">בית</text>
     <rect x="${lx}" y="10" width="8" height="3" fill="#7a7fa8" rx="1"/>
@@ -744,7 +791,7 @@ function renderWinProbChart(timeline) {
     <svg class="win-prob-chart" viewBox="0 0 ${W} ${H + 14}" preserveAspectRatio="none">
       ${goalLines}
       <polyline points="${homePts}" class="spark-line spark-home-line"/>
-      <polyline points="${drawPts}" class="spark-line spark-draw-line"/>
+      ${knockout ? '' : `<polyline points="${drawPts}" class="spark-line spark-draw-line"/>`}
       <polyline points="${awayPts}" class="spark-line spark-away-line"/>
       ${xLabels}
       ${legend}
@@ -832,6 +879,14 @@ function fmtPct(v) {
   return `${parseFloat(v.toFixed(2))}%`;
 }
 
+// Knockout matches can't end in a draw (extra time / penalties decide it),
+// so any draw probability mass gets folded proportionally into home/away.
+function stripDraw(prob) {
+  const total = prob.home + prob.away;
+  if (total <= 0) return { home: 0.5, draw: 0, away: 0.5 };
+  return { home: prob.home / total, draw: 0, away: prob.away / total };
+}
+
 function renderWinProb(pickcenter, home, away, comp, keyEvents) {
   const probCard = $('prob-card');
   if (!probCard) return;
@@ -845,6 +900,7 @@ function renderWinProb(pickcenter, home, away, comp, keyEvents) {
   const awayScore = parseInt(away?.score ?? 0);
   const minute    = parseInt(comp?.status?.displayClock?.split(':')?.[0] ?? 0);
   const state     = comp?.status?.type?.state;
+  const knockout  = isKnockoutStage(comp);
 
   const pickHomeId     = pc.homeTeamOdds?.team?.id;
   const isHomePickHome = String(pickHomeId) === String(home?.team?.id);
@@ -853,20 +909,30 @@ function renderWinProb(pickcenter, home, away, comp, keyEvents) {
 
   let prob;
   if (state === 'post') {
-    if (homeScore > awayScore)      prob = { home: 1, draw: 0, away: 0 };
+    if (knockout) {
+      // Draws in regulation get settled by extra time/penalties — ESPN marks
+      // the actual winner on the competitor object, so trust that over the score.
+      if (home?.winner)      prob = { home: 1, draw: 0, away: 0 };
+      else if (away?.winner) prob = { home: 0, draw: 0, away: 1 };
+      else if (homeScore > awayScore) prob = { home: 1, draw: 0, away: 0 };
+      else                             prob = { home: 0, draw: 0, away: 1 };
+    } else if (homeScore > awayScore)      prob = { home: 1, draw: 0, away: 0 };
     else if (homeScore < awayScore) prob = { home: 0, draw: 0, away: 1 };
     else                            prob = { home: 0, draw: 1, away: 0 };
   } else if (state === 'pre') {
     const m = marketProbs(hML, aML, drawML);
     prob = { home: m.pH, draw: m.pD, away: m.pA };
+    if (knockout) prob = stripDraw(prob);
   } else {
     prob = calcLiveWinProb(hML, aML, drawML, homeScore, awayScore, minute);
+    if (knockout) prob = stripDraw(prob);
   }
 
   const hPct = prob.home * 100;
   const dPct = prob.draw * 100;
   const aPct = prob.away * 100;
 
+  probCard.classList.toggle('no-draw', knockout);
   $('wp-home-name').textContent  = translateTeam(home?.team?.displayName || '');
   $('wp-away-name').textContent  = translateTeam(away?.team?.displayName || '');
   $('wp-home-pct').textContent   = fmtPct(hPct);
@@ -878,9 +944,9 @@ function renderWinProb(pickcenter, home, away, comp, keyEvents) {
   probCard.classList.remove('hidden');
 
   // Win probability chart (full match history reconstructed from goals)
-  const timeline = buildWinProbTimeline(keyEvents || [], pickcenter, home, away, minute);
+  const timeline = buildWinProbTimeline(keyEvents || [], pickcenter, home, away, minute, knockout);
   const chartEl  = $('wp-chart');
-  if (chartEl) chartEl.innerHTML = renderWinProbChart(timeline);
+  if (chartEl) chartEl.innerHTML = renderWinProbChart(timeline, knockout);
 }
 
 // ── Events list ───────────────────────────────────────────────────────────────
@@ -971,6 +1037,7 @@ document.querySelectorAll('.tab').forEach(tab => {
 $('back-btn').addEventListener('click', () => {
   clearInterval(refreshTimer);
   currentFixtureId = null;
+  document.body.classList.remove('is-final');
   $('section-detail').classList.add('hidden');
   $('section-matches').classList.remove('hidden');
   loadMatchList();
