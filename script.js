@@ -1,6 +1,7 @@
 const ESPN_BASE  = 'https://site.api.espn.com/apis/site/v2/sports/soccer';
 const LEAGUE     = 'fifa.world';
-const REFRESH_MS = 1_000;
+const REFRESH_MS = 4_000;      // baseline polling interval when things are healthy
+const MAX_BACKOFF_MS = 20_000; // ceiling for exponential backoff after failures
 
 const STAT_LABELS = {
   shotsOnTarget:    'ביצועות למסגרת',
@@ -55,8 +56,10 @@ const EVENT_TYPES = [
 
 let currentFixtureId = null;
 const finalCelebrated = {}; // fixtureId -> true once we've shown the victory celebration
-let refreshTimer     = null;
-let expandedStat     = null;
+let refreshTimer      = null; // now a setTimeout id (self-rescheduling), not a setInterval id
+let expandedStat      = null;
+let isFetching        = false; // guards against overlapping refreshDetail calls (race condition)
+let consecutiveErrors = 0;     // drives exponential backoff after network failures
 
 // { statKey → [{minute, home, away}] }
 const statHistory = {};
@@ -95,6 +98,14 @@ async function fetchJSON(url) {
 }
 
 const $ = id => document.getElementById(id);
+
+// Escapes text pulled from the ESPN API before it's dropped into innerHTML.
+// The feed is normally clean, but free-text fields (referee notes, event
+// text, player names) are outside our control, so treat them as untrusted.
+const ESCAPE_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, ch => ESCAPE_MAP[ch]);
+}
 
 function formatClock(comp) {
   const status = comp.status;
@@ -349,19 +360,19 @@ function renderMatchList(events) {
         <div class="mi-teams">
           <div class="mi-team home-mi">
             <span class="mi-flag">${teamFlag(hName)}</span>
-            <span>${translateTeam(hName)}</span>
+            <span>${escapeHtml(translateTeam(hName))}</span>
           </div>
           <div class="mi-score ${isDone ? 'done' : isLive ? 'live-score' : 'pre-score'}">
             ${isLive || isDone ? `${home?.score ?? 0} - ${away?.score ?? 0}` : 'נגד'}
           </div>
           <div class="mi-team away-mi">
             <span class="mi-flag">${teamFlag(aName)}</span>
-            <span>${translateTeam(aName)}</span>
+            <span>${escapeHtml(translateTeam(aName))}</span>
           </div>
         </div>
         <div class="mi-bottom">
-          <span class="mi-clock ${isLive ? 'live-clock' : ''}">${isLive ? '● ' : ''}${clock}</span>
-          <span class="mi-group ${isKnockoutStage(comp) ? 'mi-knockout' : ''}">${translateStage(comp)}</span>
+          <span class="mi-clock ${isLive ? 'live-clock' : ''}">${isLive ? '● ' : ''}${escapeHtml(clock)}</span>
+          <span class="mi-group ${isKnockoutStage(comp) ? 'mi-knockout' : ''}">${escapeHtml(translateStage(comp))}</span>
         </div>
       </div>`;
   }).join('');
@@ -381,20 +392,44 @@ async function openMatch(id) {
   loadStatHistoryFromStorage(); // restore previous session data
   $('section-matches').classList.add('hidden');
   $('section-detail').classList.remove('hidden');
-  clearInterval(refreshTimer);
+  clearTimeout(refreshTimer);
+  consecutiveErrors = 0;
   await refreshDetail();
-  refreshTimer = setInterval(refreshDetail, REFRESH_MS);
+  scheduleNextRefresh();
+}
+
+// Schedules the next refreshDetail call. Uses the healthy REFRESH_MS interval
+// normally, but backs off exponentially (capped at MAX_BACKOFF_MS) after
+// consecutive failures, so a network outage doesn't flood ESPN with retries.
+function scheduleNextRefresh() {
+  clearTimeout(refreshTimer);
+  if (!currentFixtureId) return;
+  const delay = consecutiveErrors > 0
+    ? Math.min(MAX_BACKOFF_MS, REFRESH_MS * (2 ** consecutiveErrors))
+    : REFRESH_MS;
+  refreshTimer = setTimeout(async () => {
+    await refreshDetail();
+    scheduleNextRefresh();
+  }, delay);
 }
 
 async function refreshDetail() {
-  if (!currentFixtureId) return;
+  if (!currentFixtureId || isFetching) return; // avoid overlapping requests / out-of-order responses
+  isFetching = true;
   try {
     const data = await fetchJSON(`${ESPN_BASE}/${LEAGUE}/summary?event=${currentFixtureId}`);
+    if (!currentFixtureId) return; // user navigated back away while this request was in flight
     renderDetail(data);
+    consecutiveErrors = 0;
     const t = new Date();
-    $('update-text').textContent = `עודכן: ${t.toLocaleTimeString('he-IL')} · מתרענן כל 2 שניות`;
+    const secs = Math.round(REFRESH_MS / 1000);
+    $('update-text').textContent = `עודכן: ${t.toLocaleTimeString('he-IL')} · מתרענן כל ${secs} שניות`;
   } catch (e) {
-    $('update-text').textContent = `שגיאה בעדכון: ${e.message}`;
+    consecutiveErrors++;
+    const nextSecs = Math.round(Math.min(MAX_BACKOFF_MS, REFRESH_MS * (2 ** consecutiveErrors)) / 1000);
+    $('update-text').textContent = `שגיאה בעדכון: ${e.message} · ניסיון הבא בעוד ${nextSecs} שניות`;
+  } finally {
+    isFetching = false;
   }
 }
 
@@ -522,9 +557,9 @@ function renderKeyEvents(keyEvents, home, away) {
       : teamFlag(away?.team?.displayName || '');
     return `<div class="goal-item ${isHome ? 'goal-home' : 'goal-away'}">
       <span class="goal-flag">${flag}</span>
-      <span class="goal-min">${min}'</span>
-      <span class="goal-scorer">${scorer || '—'}</span>
-      ${assist ? `<span class="goal-assist">(בסיוע ${assist})</span>` : ''}
+      <span class="goal-min">${escapeHtml(min)}'</span>
+      <span class="goal-scorer">${escapeHtml(scorer) || '—'}</span>
+      ${assist ? `<span class="goal-assist">(בסיוע ${escapeHtml(assist)})</span>` : ''}
     </div>`;
   }).join('');
 }
@@ -581,7 +616,7 @@ function renderSportsmanship(boxscore, home, away, minute) {
 
   const meter = (score, color, label, align) => `
     <div class="sport-meter-wrap" style="text-align:${align}">
-      <div class="sport-label">${label}</div>
+      <div class="sport-label">${escapeHtml(label)}</div>
       <div class="sport-score" style="color:${color}">${score}</div>
       <div class="sport-track">
         <div class="sport-fill" style="width:${score}%;background:${color}"></div>
@@ -784,6 +819,22 @@ function renderStats(boxscore, home, away, comp) {
 }
 
 // ── Win Probability Timeline (reconstructed from goals) ──────────────────────
+
+// buildWinProbTimeline re-simulates up to ~96 one-minute steps (121 iterations
+// of negBinom1X2 each) every time it runs. Nothing in that computation changes
+// unless the fixture, the current minute, the score, or knockout-status
+// changes — so we memoize on those and skip the recompute on every poll.
+let _timelineCache = { key: null, timeline: [] };
+
+function buildWinProbTimelineCached(keyEvents, pickcenter, homeComp, awayComp, currentMinute, knockout) {
+  const hScore = parseInt(homeComp?.score ?? 0);
+  const aScore = parseInt(awayComp?.score ?? 0);
+  const key = `${currentFixtureId}|${currentMinute}|${hScore}|${aScore}|${knockout}`;
+  if (_timelineCache.key === key) return _timelineCache.timeline;
+  const timeline = buildWinProbTimeline(keyEvents, pickcenter, homeComp, awayComp, currentMinute, knockout);
+  _timelineCache = { key, timeline };
+  return timeline;
+}
 
 function buildWinProbTimeline(keyEvents, pickcenter, homeComp, awayComp, currentMinute, knockout = false) {
   const pc = Array.isArray(pickcenter) ? pickcenter[0] : pickcenter;
@@ -1107,7 +1158,7 @@ function renderWinProb(pickcenter, home, away, comp, keyEvents) {
   probCard.classList.remove('hidden');
 
   // Win probability chart (full match history reconstructed from goals)
-  const timeline = buildWinProbTimeline(keyEvents || [], pickcenter, home, away, minute, knockout);
+  const timeline = buildWinProbTimelineCached(keyEvents || [], pickcenter, home, away, minute, knockout);
   const chartEl  = $('wp-chart');
   if (chartEl) chartEl.innerHTML = renderWinProbChart(timeline, knockout);
 }
@@ -1133,16 +1184,16 @@ function renderEventsList(keyEvents, home, away) {
       ? gScorer
       : (e.athletesInvolved?.map(a => a.displayName).join(', ') || '');
     const assist = gAssist
-      ? `<div class="ev-assist">בסיוע: ${gAssist}</div>`
+      ? `<div class="ev-assist">בסיוע: ${escapeHtml(gAssist)}</div>`
       : '';
 
     return `
       <div class="event-item ${teamName ? (isHome ? 'event-home' : 'event-away') : 'event-neutral'}">
-        <span class="ev-min">${min}</span>
+        <span class="ev-min">${escapeHtml(min)}</span>
         <span class="ev-icon">${icon}</span>
         <div class="ev-body">
-          <div class="ev-label">${label}${teamName ? ` · ${teamName}` : ''}</div>
-          ${players ? `<div class="ev-player">${players}</div>` : ''}
+          <div class="ev-label">${escapeHtml(label)}${teamName ? ` · ${escapeHtml(teamName)}` : ''}</div>
+          ${players ? `<div class="ev-player">${escapeHtml(players)}</div>` : ''}
           ${assist}
         </div>
       </div>`;
@@ -1165,9 +1216,9 @@ function renderLineup(rosters, home, away) {
     const subs     = players.filter(p => !p.starter);
     const row = p => `
       <div class="player-row">
-        <span class="p-num">${p.jersey || ''}</span>
-        <span class="p-pos">${p.position?.abbreviation || ''}</span>
-        <span class="p-name">${p.athlete?.displayName || '—'}${p.subbedIn ? ' 🔼' : ''}${p.subbedOut ? ' 🔽' : ''}</span>
+        <span class="p-num">${escapeHtml(p.jersey || '')}</span>
+        <span class="p-pos">${escapeHtml(p.position?.abbreviation || '')}</span>
+        <span class="p-name">${escapeHtml(p.athlete?.displayName || '—')}${p.subbedIn ? ' 🔼' : ''}${p.subbedOut ? ' 🔽' : ''}</span>
       </div>`;
     return starters.map(row).join('') +
       (subs.length ? `<div class="lineup-subs-label">חילופין</div>${subs.map(row).join('')}` : '');
@@ -1176,11 +1227,11 @@ function renderLineup(rosters, home, away) {
   container.innerHTML = `
     <div class="lineup-grid">
       <div class="lineup-col">
-        <div class="lineup-team-name">${translateTeam(homeRoster.team?.displayName || '')}</div>
+        <div class="lineup-team-name">${escapeHtml(translateTeam(homeRoster.team?.displayName || ''))}</div>
         ${renderPlayers(homeRoster)}
       </div>
       <div class="lineup-col">
-        <div class="lineup-team-name">${translateTeam(awayRoster?.team?.displayName || '')}</div>
+        <div class="lineup-team-name">${escapeHtml(translateTeam(awayRoster?.team?.displayName || ''))}</div>
         ${renderPlayers(awayRoster)}
       </div>
     </div>`;
@@ -1190,15 +1241,19 @@ function renderLineup(rosters, home, away) {
 
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => {
+      t.classList.remove('active');
+      t.setAttribute('aria-selected', 'false');
+    });
     tab.classList.add('active');
+    tab.setAttribute('aria-selected', 'true');
     document.querySelectorAll('.panel').forEach(p => p.classList.add('hidden'));
     document.getElementById(tab.dataset.panel)?.classList.remove('hidden');
   });
 });
 
 $('back-btn').addEventListener('click', () => {
-  clearInterval(refreshTimer);
+  clearTimeout(refreshTimer);
   currentFixtureId = null;
   document.body.classList.remove('is-final');
   $('section-detail').classList.add('hidden');
@@ -1208,10 +1263,10 @@ $('back-btn').addEventListener('click', () => {
 
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
-    clearInterval(refreshTimer);
+    clearTimeout(refreshTimer);
   } else if (currentFixtureId) {
-    refreshDetail();
-    refreshTimer = setInterval(refreshDetail, REFRESH_MS);
+    consecutiveErrors = 0;
+    refreshDetail().then(scheduleNextRefresh);
   }
 });
 
@@ -1236,6 +1291,10 @@ const TEAM_FLAG = {
   'Egypt':'🇪🇬','Algeria':'🇩🇿','Ivory Coast':'🇨🇮','Mali':'🇲🇱',
   'DR Congo':'🇨🇩','South Africa':'🇿🇦','Angola':'🇦🇴','China':'🇨🇳',
   'Iraq':'🇮🇶','Jordan':'🇯🇴','Uzbekistan':'🇺🇿','Indonesia':'🇮🇩',
+  // 2026 World Cup qualifiers not previously covered (48-team field)
+  'Haiti':'🇭🇹','Curacao':'🇨🇼','Curaçao':'🇨🇼','Sweden':'🇸🇪',
+  'Cape Verde':'🇨🇻','Cabo Verde':'🇨🇻','Norway':'🇳🇴',
+  'Czechia':'🇨🇿','Turkiye':'🇹🇷','Türkiye':'🇹🇷',
 };
 
 const TEAM_HE = {
@@ -1260,6 +1319,10 @@ const TEAM_HE = {
   'Mali':'מאלי','DR Congo':'קונגו','South Africa':'דרום אפריקה',
   'Angola':'אנגולה','China':'סין','Iraq':'עיראק','Jordan':'ירדן',
   'Uzbekistan':'אוזבקיסטן','Indonesia':'אינדונזיה',
+  // 2026 World Cup qualifiers not previously covered (48-team field)
+  'Haiti':'האיטי','Curacao':'קוראסאו','Curaçao':'קוראסאו','Sweden':'שוודיה',
+  'Cape Verde':'כף ורדה','Cabo Verde':'כף ורדה','Norway':'נורווגיה',
+  'Czechia':"צ'כיה",'Turkiye':'טורקיה','Türkiye':'טורקיה',
 };
 
 // ── Init ──────────────────────────────────────────────────────────────────────

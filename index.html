@@ -36,12 +36,12 @@
             <div class="sb-name" id="home-name"></div>
           </div>
           <div class="sb-center">
-            <div class="sb-score">
+            <div class="sb-score" aria-live="polite" aria-atomic="true">
               <span id="home-score">0</span>
               <span class="sb-sep">-</span>
               <span id="away-score">0</span>
             </div>
-            <div class="sb-clock" id="sb-clock"></div>
+            <div class="sb-clock" id="sb-clock" aria-live="off"></div>
           </div>
           <div class="sb-team">
             <div class="sb-flag" id="away-flag"></div>
@@ -51,13 +51,13 @@
         <div class="goals-strip" id="goals-strip"></div>
       </div>
 
-      <div class="tabs">
-        <button class="tab active" data-panel="panel-stats">סטטיסטיקות</button>
-        <button class="tab" data-panel="panel-events">אירועים</button>
-        <button class="tab" data-panel="panel-lineup">הרכבים</button>
+      <div class="tabs" role="tablist">
+        <button class="tab active" role="tab" aria-selected="true" aria-controls="panel-stats" data-panel="panel-stats">סטטיסטיקות</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="panel-events" data-panel="panel-events">אירועים</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="panel-lineup" data-panel="panel-lineup">הרכבים</button>
       </div>
 
-      <div class="panel" id="panel-stats">
+      <div class="panel" id="panel-stats" role="tabpanel">
 
         <div class="card hidden" id="prob-card">
           <div class="card-title">סיכוי לנצח – בזמן אמת</div>
@@ -98,14 +98,14 @@
         </div>
       </div>
 
-      <div class="panel hidden" id="panel-events">
+      <div class="panel hidden" id="panel-events" role="tabpanel">
         <div class="card">
           <div class="card-title">אירועי המשחק</div>
           <div id="events-list"><div class="loading">טוען...</div></div>
         </div>
       </div>
 
-      <div class="panel hidden" id="panel-lineup">
+      <div class="panel hidden" id="panel-lineup" role="tabpanel">
         <div class="card">
           <div class="card-title">הרכבים</div>
           <div id="lineup-content"><div class="loading">טוען...</div></div>
@@ -114,7 +114,7 @@
 
       <div class="update-bar">
         <span class="update-dot"></span>
-        <span id="update-text">מתעדכן...</span>
+        <span id="update-text" aria-live="off">מתעדכן...</span>
       </div>
 
     </section>
