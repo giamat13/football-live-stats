@@ -16,11 +16,11 @@
 
 :root{
   /* palette */
-  --bg:             #060606;
-  --bg-2:           #0d0d0d;
-  --panel:          rgba(255,255,255,0.045);
-  --panel-solid:    #131313;
-  --panel-raised:   #191919;
+  --bg:             #0a2420;
+  --bg-2:           #123330;
+  --panel:          rgba(255,255,255,0.05);
+  --panel-solid:    #113330;
+  --panel-raised:   #17403c;
   --line:           rgba(255,255,255,0.10);
   --line-strong:    rgba(255,255,255,0.20);
 
