@@ -1000,6 +1000,22 @@ function applyRedCardImpact(lamH, lamA, homeReds = 0, awayReds = 0) {
   };
 }
 
+// Deliberate UX floor, not a statistical correction: the trailing side's
+// live win% gets multiplied up and given a floor, then everything is
+// renormalized. Requested explicitly because the honest model's low
+// single-digit numbers for a 1-goal-down comeback read as "too low" against
+// user expectations, even though they're what a calibrated model produces.
+const UNDERDOG_BOOST = 2.0;
+const UNDERDOG_FLOOR = 0.05;
+
+function raiseUnderdogFloor(prob) {
+  const minSide = prob.home <= prob.away ? 'home' : 'away';
+  const boosted = { ...prob };
+  boosted[minSide] = Math.max(prob[minSide] * UNDERDOG_BOOST, UNDERDOG_FLOOR);
+  const total = boosted.home + boosted.draw + boosted.away;
+  return { home: boosted.home / total, draw: boosted.draw / total, away: boosted.away / total };
+}
+
 function calcLiveWinProb(homeML, awayML, drawML, homeScore, awayScore, minute, homeReds = 0, awayReds = 0) {
   const { pH, pD, pA } = marketProbs(homeML, awayML, drawML);
   const { lamH, lamA } = calibrateLambdas(pH, pD, pA);
@@ -1010,7 +1026,7 @@ function calcLiveWinProb(homeML, awayML, drawML, homeScore, awayScore, minute, h
   const diff = homeScore - awayScore;
   // No time left → only the current scoreline matters.
   const MAX  = frac > 0 ? 10 : 0;
-  return negBinom1X2(homeLam, awayLam, diff, MAX);
+  return raiseUnderdogFloor(negBinom1X2(homeLam, awayLam, diff, MAX));
 }
 
 // Percentage with up to 2 decimals, trailing zeros trimmed
