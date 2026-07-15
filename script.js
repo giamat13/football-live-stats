@@ -120,7 +120,7 @@ function translateTeam(name) { return TEAM_HE[name] || name; }
 function teamFlag(name)       { return TEAM_FLAG[name] || '🏳'; }
 
 // ── Final-match victory celebration ─────────────────────────────────────────
-const CONFETTI_COLORS = ['#f5c518', '#5b7fe8', '#e85b5b', '#ffffff', '#7ee787'];
+const CONFETTI_COLORS = ['#d4ff3f', '#00d9c0', '#ff4d6d', '#f5f5f0', '#ff9f1c'];
 
 function launchConfetti() {
   const layer = $('confetti-layer');
@@ -295,12 +295,12 @@ function renderSparklineSVG(statKey, expanded = false) {
          preserveAspectRatio="none">
       <defs>
         <linearGradient id="gh${statKey}" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#5b7fe8" stop-opacity="0.35"/>
-          <stop offset="100%" stop-color="#5b7fe8" stop-opacity="0.02"/>
+          <stop offset="0%" stop-color="#00d9c0" stop-opacity="0.35"/>
+          <stop offset="100%" stop-color="#00d9c0" stop-opacity="0.02"/>
         </linearGradient>
         <linearGradient id="ga${statKey}" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#e85b5b" stop-opacity="0.35"/>
-          <stop offset="100%" stop-color="#e85b5b" stop-opacity="0.02"/>
+          <stop offset="0%" stop-color="#ff4d6d" stop-opacity="0.35"/>
+          <stop offset="100%" stop-color="#ff4d6d" stop-opacity="0.02"/>
         </linearGradient>
       </defs>
       <path d="${homeArea}" fill="url(#gh${statKey})"/>
@@ -534,10 +534,10 @@ function calcSportsScore(stats) {
 }
 
 function sportScoreColor(score) {
-  if (score >= 75) return '#2ecc71';
-  if (score >= 50) return '#f5c518';
-  if (score >= 30) return '#e67e22';
-  return '#e74c3c';
+  if (score >= 75) return '#7ed957';
+  if (score >= 50) return '#d4ff3f';
+  if (score >= 30) return '#ff9f1c';
+  return '#ff4d6d';
 }
 
 function renderSportsmanship(boxscore, home, away, minute) {
@@ -833,15 +833,15 @@ function renderWinProbChart(timeline, knockout = false) {
   // Legend (no draw entry for knockout matches — there's no such outcome)
   const lx = W - 80;
   const legend = knockout ? `
-    <rect x="${lx}" y="2" width="8" height="3" fill="#5b7fe8" rx="1"/>
+    <rect x="${lx}" y="2" width="8" height="3" fill="#00d9c0" rx="1"/>
     <text x="${lx + 11}" y="6" class="spark-label" text-anchor="start">בית</text>
-    <rect x="${lx}" y="10" width="8" height="3" fill="#e85b5b" rx="1"/>
+    <rect x="${lx}" y="10" width="8" height="3" fill="#ff4d6d" rx="1"/>
     <text x="${lx + 11}" y="14" class="spark-label" text-anchor="start">חוץ</text>` : `
-    <rect x="${lx}" y="2" width="8" height="3" fill="#5b7fe8" rx="1"/>
+    <rect x="${lx}" y="2" width="8" height="3" fill="#00d9c0" rx="1"/>
     <text x="${lx + 11}" y="6" class="spark-label" text-anchor="start">בית</text>
-    <rect x="${lx}" y="10" width="8" height="3" fill="#7a7fa8" rx="1"/>
+    <rect x="${lx}" y="10" width="8" height="3" fill="#5c5c58" rx="1"/>
     <text x="${lx + 11}" y="14" class="spark-label" text-anchor="start">תיקו</text>
-    <rect x="${lx}" y="18" width="8" height="3" fill="#e85b5b" rx="1"/>
+    <rect x="${lx}" y="18" width="8" height="3" fill="#ff4d6d" rx="1"/>
     <text x="${lx + 11}" y="22" class="spark-label" text-anchor="start">חוץ</text>`;
 
   return `
