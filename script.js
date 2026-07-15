@@ -455,6 +455,20 @@ function isGoalEvent(e) {
     || /^goal/i.test(e.text || '');
 }
 
+function isRedCardEvent(e) {
+  return /red card/i.test(e.type?.text || e.text || '');
+}
+
+// Count red cards per side from the event feed, for the live win-prob model.
+function countRedCards(keyEvents, home) {
+  let homeReds = 0, awayReds = 0;
+  for (const e of (keyEvents || [])) {
+    if (!isRedCardEvent(e)) continue;
+    if (sameTeam(e.team, home)) homeReds++; else awayReds++;
+  }
+  return { homeReds, awayReds };
+}
+
 function getEventMeta(e) {
   const fromType = (e.type?.text || '').toLowerCase();
   const fromText = (e.text  || '').toLowerCase();
@@ -892,6 +906,37 @@ function poisson1X2(lamH, lamA, diff = 0, MAX = 12) {
   return { home: wH / t, draw: wD / t, away: wA / t };
 }
 
+// A team's true scoring rate on a given day isn't the fixed market average —
+// it varies with form, fitness, tactics. Negative-binomial (Gamma-Poisson
+// mixture) captures that extra match-to-match variance; fixed-rate Poisson
+// cannot. NB_DISPERSION is a moderate value from that literature range —
+// this only fattens late-game tails a little, it does not manufacture a
+// "score effect" boost (evidence for one in soccer is contested; see
+// calcLiveWinProb).
+const NB_DISPERSION = 4;
+
+function negBinomPMF(x, mu, k) {
+  if (mu <= 0) return x === 0 ? 1 : 0;
+  let p = Math.pow(k / (k + mu), k);
+  for (let i = 1; i <= x; i++) p *= (i - 1 + k) / i * (mu / (k + mu));
+  return p;
+}
+
+// Same enumeration as poisson1X2, but with fattened tails via negative binomial.
+function negBinom1X2(lamH, lamA, diff = 0, MAX = 12) {
+  let wH = 0, wD = 0, wA = 0;
+  for (let i = 0; i <= MAX; i++) {
+    const pi = negBinomPMF(i, lamH, NB_DISPERSION);
+    for (let j = 0; j <= MAX; j++) {
+      const p = pi * negBinomPMF(j, lamA, NB_DISPERSION);
+      const d = diff + i - j;
+      if (d > 0) wH += p; else if (d === 0) wD += p; else wA += p;
+    }
+  }
+  const t = wH + wD + wA;
+  return { home: wH / t, draw: wD / t, away: wA / t };
+}
+
 // Solve for the home/away expected goals (over a full match) whose Poisson
 // model reproduces the market's 1X2 probabilities. Parametrised by total goals
 // (L) and supremacy (S = home − away): L drives the draw rate, S the balance.
@@ -918,16 +963,54 @@ function calibrateLambdas(pH, pD, pA) {
   return res;
 }
 
-function calcLiveWinProb(homeML, awayML, drawML, homeScore, awayScore, minute) {
+// Regulation + typical stoppage time (FiveThirtyEight's soccer model uses a
+// ~96-minute average match: 2' added in the first half, 4' in the second).
+const MATCH_MINUTES = 96;
+
+// Goals arrive faster as a match goes on — FiveThirtyEight found the scoring
+// rate at the 85th minute runs ~1.4x the rate at the 5th. LATE_SURGE is
+// calibrated so remainingGoalFraction reproduces that ratio; a flat linear
+// countdown ignores this and writes off a trailing team's chances too fast.
+const LATE_SURGE = 0.395;
+
+// Fraction of a team's full-match expected goals still to come at `minute`.
+// frac(0) = 1 (whole match ahead), frac(MATCH_MINUTES) = 0 (final whistle).
+function remainingGoalFraction(minute) {
+  const m = Math.min(MATCH_MINUTES, Math.max(0, minute));
+  const linear = (MATCH_MINUTES - m) / MATCH_MINUTES;
+  return Math.max(0, linear * (1 + (LATE_SURGE / 2) * (m / MATCH_MINUTES)));
+}
+
+// A sending-off shifts both sides' scoring rates: the extra man boosts the
+// opponent's attack and dents the reduced side's own output. Magnitude is a
+// rough consensus figure from in-play modeling literature (~15-20% swing per
+// card); since this multiplies the already time-scaled lambda, the raw goal
+// impact naturally fades as fewer minutes remain — matching the finding that
+// a red card's effect on win probability decays over the rest of the match.
+const RED_CARD_ATTACK_BOOST = 0.18;
+const RED_CARD_DEFENSE_DROP = 0.22;
+
+function applyRedCardImpact(lamH, lamA, homeReds = 0, awayReds = 0) {
+  const advantage = (awayReds || 0) - (homeReds || 0); // + → home has extra man
+  const homeMult = 1 + RED_CARD_ATTACK_BOOST * Math.max(0, advantage) - RED_CARD_DEFENSE_DROP * Math.max(0, -advantage);
+  const awayMult = 1 + RED_CARD_ATTACK_BOOST * Math.max(0, -advantage) - RED_CARD_DEFENSE_DROP * Math.max(0, advantage);
+  return {
+    homeLam: Math.max(0, lamH * homeMult),
+    awayLam: Math.max(0, lamA * awayMult),
+  };
+}
+
+function calcLiveWinProb(homeML, awayML, drawML, homeScore, awayScore, minute, homeReds = 0, awayReds = 0) {
   const { pH, pD, pA } = marketProbs(homeML, awayML, drawML);
   const { lamH, lamA } = calibrateLambdas(pH, pD, pA);
 
-  // Scale the calibrated full-match rates down to the minutes that remain.
-  const frac = Math.max(0, 90 - minute) / 90;
+  const frac = remainingGoalFraction(minute);
+  const { homeLam, awayLam } = applyRedCardImpact(lamH * frac, lamA * frac, homeReds, awayReds);
+
   const diff = homeScore - awayScore;
   // No time left → only the current scoreline matters.
   const MAX  = frac > 0 ? 10 : 0;
-  return poisson1X2(lamH * frac, lamA * frac, diff, MAX);
+  return negBinom1X2(homeLam, awayLam, diff, MAX);
 }
 
 // Percentage with up to 2 decimals, trailing zeros trimmed
@@ -981,7 +1064,8 @@ function renderWinProb(pickcenter, home, away, comp, keyEvents) {
     prob = { home: m.pH, draw: m.pD, away: m.pA };
     if (knockout) prob = stripDraw(prob);
   } else {
-    prob = calcLiveWinProb(hML, aML, drawML, homeScore, awayScore, minute);
+    const { homeReds, awayReds } = countRedCards(keyEvents, home);
+    prob = calcLiveWinProb(hML, aML, drawML, homeScore, awayScore, minute, homeReds, awayReds);
     if (knockout) prob = stripDraw(prob);
   }
 
