@@ -1008,10 +1008,16 @@ function applyRedCardImpact(lamH, lamA, homeReds = 0, awayReds = 0) {
 const UNDERDOG_BOOST = 2.0;
 const UNDERDOG_FLOOR = 0.05;
 
-function raiseUnderdogFloor(prob) {
-  const minSide = prob.home <= prob.away ? 'home' : 'away';
+// `diff` is the actual scoreboard gap (home − away). Only the side that is
+// literally behind on the scoreboard gets raised — a market underdog who is
+// level or ahead is left alone. (Previously this boosted whichever side the
+// model rated lower, which also fired on level scores and could flip a real
+// market favorite into looking like the underdog.)
+function raiseUnderdogFloor(prob, diff) {
+  if (diff === 0) return prob;
+  const trailingSide = diff > 0 ? 'away' : 'home';
   const boosted = { ...prob };
-  boosted[minSide] = Math.max(prob[minSide] * UNDERDOG_BOOST, UNDERDOG_FLOOR);
+  boosted[trailingSide] = Math.max(prob[trailingSide] * UNDERDOG_BOOST, UNDERDOG_FLOOR);
   const total = boosted.home + boosted.draw + boosted.away;
   return { home: boosted.home / total, draw: boosted.draw / total, away: boosted.away / total };
 }
@@ -1026,7 +1032,7 @@ function calcLiveWinProb(homeML, awayML, drawML, homeScore, awayScore, minute, h
   const diff = homeScore - awayScore;
   // No time left → only the current scoreline matters.
   const MAX  = frac > 0 ? 10 : 0;
-  return raiseUnderdogFloor(negBinom1X2(homeLam, awayLam, diff, MAX));
+  return raiseUnderdogFloor(negBinom1X2(homeLam, awayLam, diff, MAX), diff);
 }
 
 // Percentage with up to 2 decimals, trailing zeros trimmed
