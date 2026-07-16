@@ -60,6 +60,8 @@ let refreshTimer      = null; // now a setTimeout id (self-rescheduling), not a 
 let expandedStat      = null;
 let isFetching        = false; // guards against overlapping refreshDetail calls (race condition)
 let consecutiveErrors = 0;     // drives exponential backoff after network failures
+let lastScore         = null; // {home, away} for currentFixtureId, used to detect a fresh goal
+let lastGoalsCount    = null; // goals-strip length last render, used to animate only newly-added goals
 
 // { statKey → [{minute, home, away}] }
 const statHistory = {};
@@ -130,13 +132,33 @@ function formatClock(comp) {
 function translateTeam(name) { return TEAM_HE[name] || name; }
 function teamFlag(name)       { return TEAM_FLAG[name] || '🏳'; }
 
+// ── Goal celebration (score pop + flash) ────────────────────────────────────
+// Plays a small burst of feedback the instant a score increments, independent
+// of the full-time final-match celebration below.
+function animateScoreEl(id) {
+  const el = $(id);
+  if (!el) return;
+  el.classList.remove('score-pop');
+  void el.offsetWidth; // restart the animation even if it's already mid-play
+  el.classList.add('score-pop');
+  setTimeout(() => el.classList.remove('score-pop'), 700);
+}
+
+function flashScoreboard() {
+  const card = document.querySelector('.scoreboard-card');
+  if (!card) return;
+  card.classList.remove('goal-flash');
+  void card.offsetWidth;
+  card.classList.add('goal-flash');
+  setTimeout(() => card.classList.remove('goal-flash'), 1000);
+}
+
 // ── Final-match victory celebration ─────────────────────────────────────────
 const CONFETTI_COLORS = ['#d4ff3f', '#00d9c0', '#ff4d6d', '#f5f5f0', '#ff9f1c'];
 
-function launchConfetti() {
+function launchConfetti(count = 90) {
   const layer = $('confetti-layer');
   if (!layer) return;
-  const count = 90;
   for (let i = 0; i < count; i++) {
     const piece = document.createElement('div');
     piece.className = 'confetti-piece';
@@ -156,6 +178,38 @@ function launchConfetti() {
     piece.style.setProperty('--spin', `${spin}deg`);
     layer.appendChild(piece);
     setTimeout(() => piece.remove(), (duration + delay) * 1000 + 200);
+  }
+}
+
+// Radial firework bursts, staggered over ~2s, layered on top of the confetti
+// fall for the final-match celebration.
+function launchFireworks() {
+  const layer = $('confetti-layer');
+  if (!layer) return;
+  const bursts = 5;
+  for (let b = 0; b < bursts; b++) {
+    setTimeout(() => {
+      const burst = document.createElement('div');
+      burst.className = 'firework-burst';
+      burst.style.left = `${15 + Math.random() * 70}%`;
+      burst.style.top  = `${12 + Math.random() * 38}%`;
+      const particles = 20;
+      for (let i = 0; i < particles; i++) {
+        const p = document.createElement('div');
+        p.className = 'firework-particle';
+        const angle = (Math.PI * 2 * i) / particles + Math.random() * 0.3;
+        const dist  = 55 + Math.random() * 55;
+        p.style.setProperty('--dx', `${(Math.cos(angle) * dist).toFixed(0)}px`);
+        p.style.setProperty('--dy', `${(Math.sin(angle) * dist).toFixed(0)}px`);
+        const sparkColor = CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)];
+        p.style.background = sparkColor;
+        p.style.color      = sparkColor; // so the box-shadow glow (currentColor) matches
+        p.style.animationDuration = `${0.8 + Math.random() * 0.4}s`;
+        burst.appendChild(p);
+      }
+      layer.appendChild(burst);
+      setTimeout(() => burst.remove(), 1500);
+    }, b * 450);
   }
 }
 
@@ -389,6 +443,8 @@ async function openMatch(id) {
   Object.keys(statHistory).forEach(k => delete statHistory[k]);
   sportHistory.length = 0;
   expandedStat = null;
+  lastScore = null;
+  lastGoalsCount = null;
   loadStatHistoryFromStorage(); // restore previous session data
   $('section-matches').classList.add('hidden');
   $('section-detail').classList.remove('hidden');
@@ -442,29 +498,43 @@ function renderDetail(data) {
   const hName  = home?.team?.displayName || '';
   const aName  = away?.team?.displayName || '';
 
+  const homeScore = parseInt(home?.score ?? 0);
+  const awayScore = parseInt(away?.score ?? 0);
+  const isFinalStage = rawStage(comp).toLowerCase() === 'final';
+
   $('home-flag').textContent = teamFlag(hName);
   $('away-flag').textContent = teamFlag(aName);
   $('home-name').textContent = translateTeam(hName);
   $('away-name').textContent = translateTeam(aName);
-  $('home-score').textContent = home?.score ?? 0;
-  $('away-score').textContent = away?.score ?? 0;
+  $('home-score').textContent = homeScore;
+  $('away-score').textContent = awayScore;
   $('sb-clock').textContent   = formatClock(comp);
   const stageText = translateStage(comp);
   $('sb-meta').textContent    =
     (stageText || data.header?.season?.name || '') +
     (data.gameInfo?.venue?.fullName ? ` · ${data.gameInfo.venue.fullName}` : '');
 
-  document.body.classList.toggle('is-final', rawStage(comp).toLowerCase() === 'final');
+  document.body.classList.toggle('is-final', isFinalStage);
 
-  if (rawStage(comp).toLowerCase() === 'final' &&
+  // A goal just went in (score increased since the last poll) — pop the
+  // number, flash the scoreboard, and — for the final — throw in a burst
+  // of confetti right when it happens, not just at the final whistle.
+  if (lastScore && (homeScore > lastScore.home || awayScore > lastScore.away)) {
+    if (homeScore > lastScore.home) animateScoreEl('home-score');
+    if (awayScore > lastScore.away) animateScoreEl('away-score');
+    flashScoreboard();
+    if (isFinalStage) launchConfetti(36);
+  }
+  lastScore = { home: homeScore, away: awayScore };
+
+  if (isFinalStage &&
       comp.status?.type?.state === 'post' &&
       !finalCelebrated[currentFixtureId]) {
     finalCelebrated[currentFixtureId] = true;
-    const homeScore = parseInt(home?.score ?? 0);
-    const awayScore = parseInt(away?.score ?? 0);
     const homeWon = home?.winner || (!away?.winner && homeScore > awayScore);
     const winnerName = translateTeam(homeWon ? hName : aName);
     launchConfetti();
+    launchFireworks();
     showWinnerBanner(`🏆 ${winnerName} — אלופת העולם 2026!`);
   }
 
@@ -546,22 +616,27 @@ function sameTeam(eventTeam, competitor) {
 function renderKeyEvents(keyEvents, home, away) {
   const goals = keyEvents.filter(isGoalEvent);
   const strip = $('goals-strip');
-  if (!goals.length) { strip.innerHTML = ''; return; }
+  if (!goals.length) { strip.innerHTML = ''; lastGoalsCount = 0; return; }
 
-  strip.innerHTML = goals.map(e => {
+  // Only the goals added since the previous render slide in — on first load
+  // (lastGoalsCount still null) everything already on the board stays put.
+  const previousCount = lastGoalsCount ?? goals.length;
+  strip.innerHTML = goals.map((e, i) => {
     const min            = e.clock?.displayValue || '';
     const isHome         = sameTeam(e.team, home);
     const { scorer, assist } = parseGoalText(e);
     const flag = isHome
       ? teamFlag(home?.team?.displayName || '')
       : teamFlag(away?.team?.displayName || '');
-    return `<div class="goal-item ${isHome ? 'goal-home' : 'goal-away'}">
+    const isNew = i >= previousCount;
+    return `<div class="goal-item ${isHome ? 'goal-home' : 'goal-away'}${isNew ? ' goal-item-new' : ''}">
       <span class="goal-flag">${flag}</span>
       <span class="goal-min">${escapeHtml(min)}'</span>
       <span class="goal-scorer">${escapeHtml(scorer) || '—'}</span>
       ${assist ? `<span class="goal-assist">(בסיוע ${escapeHtml(assist)})</span>` : ''}
     </div>`;
   }).join('');
+  lastGoalsCount = goals.length;
 }
 
 // ── Sportsmanship ─────────────────────────────────────────────────────────────
